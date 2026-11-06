@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="org_fair"
+        android:label="cartera_unit5_exercise"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
