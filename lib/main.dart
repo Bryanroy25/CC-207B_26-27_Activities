@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:http/http.dart' as http;
+
 
 void main() {
   runApp(const MyApp());
@@ -49,6 +54,7 @@ class _HomeShellState extends State<HomeShell> {
       const ProfileScreen(),
       const PetScreen(),
       const GalleryScreen(),
+      const ShelfScreen(),
     ];
 
     return Scaffold(
@@ -78,6 +84,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.photo_library_outlined),
             selectedIcon: Icon(Icons.photo_library),
             label: 'Gallery',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.shelves),
+            selectedIcon: Icon(Icons.shelves),
+            label: 'Shelf',
           ),
         ],
       ),
@@ -767,6 +778,164 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+
+// ==========================================
+// SHELF SCREEN
+// ==========================================
+
+class ShelfScreen extends StatelessWidget {
+  const ShelfScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('My Shelf'),
+          centerTitle: true,
+          bottom: const TabBar(
+            tabs: [
+              Tab(
+                icon: Icon(Icons.favorite_outline),
+                text: 'My Picks',
+              ),
+              Tab(
+                icon: Icon(Icons.menu_book_outlined),
+                text: 'Books',
+              ),
+              Tab(
+                icon: Icon(Icons.movie_outlined),
+                text: 'Movies',
+              ),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _ShelfList(
+              emptyMessage: 'Your favorite picks will appear here.',
+              items: const [
+                _ShelfItem(
+                  title: 'My Favorite Book',
+                  subtitle: 'A book I would recommend',
+                  icon: Icons.auto_stories,
+                ),
+                _ShelfItem(
+                  title: 'My Favorite Movie',
+                  subtitle: 'A movie worth watching again',
+                  icon: Icons.local_movies,
+                ),
+              ],
+              accentColor: theme.colorScheme.primaryContainer,
+            ),
+            _ShelfList(
+              emptyMessage: 'Your books will appear here.',
+              items: const [
+                _ShelfItem(
+                  title: 'The Great Gatsby',
+                  subtitle: 'F. Scott Fitzgerald',
+                  icon: Icons.book,
+                ),
+                _ShelfItem(
+                  title: 'To Kill a Mockingbird',
+                  subtitle: 'Harper Lee',
+                  icon: Icons.book,
+                ),
+                _ShelfItem(
+                  title: 'The Hobbit',
+                  subtitle: 'J. R. R. Tolkien',
+                  icon: Icons.book,
+                ),
+              ],
+              accentColor: theme.colorScheme.secondaryContainer,
+            ),
+            _ShelfList(
+              emptyMessage: 'Your movies will appear here.',
+              items: const [
+                _ShelfItem(
+                  title: 'The Avengers',
+                  subtitle: 'Action / Adventure',
+                  icon: Icons.movie,
+                ),
+                _ShelfItem(
+                  title: 'Interstellar',
+                  subtitle: 'Science Fiction',
+                  icon: Icons.movie,
+                ),
+                _ShelfItem(
+                  title: 'Spider-Man: No Way Home',
+                  subtitle: 'Action / Superhero',
+                  icon: Icons.movie,
+                ),
+              ],
+              accentColor: theme.colorScheme.tertiaryContainer,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShelfItem {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  const _ShelfItem({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+}
+
+class _ShelfList extends StatelessWidget {
+  final String emptyMessage;
+  final List<_ShelfItem> items;
+  final Color accentColor;
+
+  const _ShelfList({
+    super.key,
+    required this.emptyMessage,
+    required this.items,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return Center(
+        child: Text(emptyMessage),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: items.length,
+      separatorBuilder: (context, index) =>
+          const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final item = items[index];
+
+        return Card(
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: accentColor,
+              child: Icon(item.icon),
+            ),
+            title: Text(item.title),
+            subtitle: Text(item.subtitle),
+            trailing: const Icon(Icons.chevron_right),
+          ),
+        );
+      },
     );
   }
 }
