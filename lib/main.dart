@@ -3,8 +3,15 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
+import 'package:audioplayers/audioplayers.dart';
+
+import 'book.dart';
+import 'open_library_api.dart';
+import 'movie.dart';
+import 'omdb_api.dart';
+import 'pick.dart';
+import 'contentful_source.dart';
 
 
 void main() {
@@ -792,8 +799,6 @@ class ShelfScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -802,81 +807,17 @@ class ShelfScreen extends StatelessWidget {
           centerTitle: true,
           bottom: const TabBar(
             tabs: [
-              Tab(
-                icon: Icon(Icons.favorite_outline),
-                text: 'My Picks',
-              ),
-              Tab(
-                icon: Icon(Icons.menu_book_outlined),
-                text: 'Books',
-              ),
-              Tab(
-                icon: Icon(Icons.movie_outlined),
-                text: 'Movies',
-              ),
+              Tab(icon: Icon(Icons.favorite_outline), text: 'My Picks'),
+              Tab(icon: Icon(Icons.menu_book_outlined), text: 'Books'),
+              Tab(icon: Icon(Icons.movie_outlined), text: 'Movies'),
             ],
           ),
         ),
-        body: TabBarView(
+        body: const TabBarView(
           children: [
-            _ShelfList(
-              emptyMessage: 'Your favorite picks will appear here.',
-              items: const [
-                _ShelfItem(
-                  title: 'My Favorite Book',
-                  subtitle: 'A book I would recommend',
-                  icon: Icons.auto_stories,
-                ),
-                _ShelfItem(
-                  title: 'My Favorite Movie',
-                  subtitle: 'A movie worth watching again',
-                  icon: Icons.local_movies,
-                ),
-              ],
-              accentColor: theme.colorScheme.primaryContainer,
-            ),
-            _ShelfList(
-              emptyMessage: 'Your books will appear here.',
-              items: const [
-                _ShelfItem(
-                  title: 'The Great Gatsby',
-                  subtitle: 'F. Scott Fitzgerald',
-                  icon: Icons.book,
-                ),
-                _ShelfItem(
-                  title: 'To Kill a Mockingbird',
-                  subtitle: 'Harper Lee',
-                  icon: Icons.book,
-                ),
-                _ShelfItem(
-                  title: 'The Hobbit',
-                  subtitle: 'J. R. R. Tolkien',
-                  icon: Icons.book,
-                ),
-              ],
-              accentColor: theme.colorScheme.secondaryContainer,
-            ),
-            _ShelfList(
-              emptyMessage: 'Your movies will appear here.',
-              items: const [
-                _ShelfItem(
-                  title: 'The Avengers',
-                  subtitle: 'Action / Adventure',
-                  icon: Icons.movie,
-                ),
-                _ShelfItem(
-                  title: 'Interstellar',
-                  subtitle: 'Science Fiction',
-                  icon: Icons.movie,
-                ),
-                _ShelfItem(
-                  title: 'Spider-Man: No Way Home',
-                  subtitle: 'Action / Superhero',
-                  icon: Icons.movie,
-                ),
-              ],
-              accentColor: theme.colorScheme.tertiaryContainer,
-            ),
+            MyPicksTab(),
+            BooksSearchTab(),
+            MoviesSearchTab(),
           ],
         ),
       ),
@@ -884,58 +825,281 @@ class ShelfScreen extends StatelessWidget {
   }
 }
 
-class _ShelfItem {
-  final String title;
-  final String subtitle;
-  final IconData icon;
+// ==========================================
+// MY PICKS TAB
+// ==========================================
 
-  const _ShelfItem({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-  });
+class MyPicksTab extends StatefulWidget {
+  const MyPicksTab({super.key});
+
+  @override
+  State<MyPicksTab> createState() => _MyPicksTabState();
 }
 
-class _ShelfList extends StatelessWidget {
-  final String emptyMessage;
-  final List<_ShelfItem> items;
-  final Color accentColor;
+class _MyPicksTabState extends State<MyPicksTab> {
+  final PickSource _source = ContentfulPickSource();
+  late Future<List<Pick>> _picksFuture;
 
-  const _ShelfList({
-    super.key,
-    required this.emptyMessage,
-    required this.items,
-    required this.accentColor,
-  });
+  @override
+  void initState() {
+    super.initState();
+    _picksFuture = _source.fetchPicks();
+  }
+
+  Future<void> _refresh() async {
+    final future = _source.fetchPicks();
+    setState(() {
+      _picksFuture = future;
+    });
+    await future;
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return Center(
-        child: Text(emptyMessage),
-      );
-    }
+    return FutureBuilder<List<Pick>>(
+      future: _picksFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: items.length,
-      separatorBuilder: (context, index) =>
-          const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = items[index];
-
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: accentColor,
-              child: Icon(item.icon),
+        if (snapshot.hasError) {
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                const SizedBox(height: 100),
+                const Icon(Icons.cloud_off, size: 48),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Could not load your picks.\n${snapshot.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const Center(child: Text('Pull down to try again.')),
+              ],
             ),
-            title: Text(item.title),
-            subtitle: Text(item.subtitle),
-            trailing: const Icon(Icons.chevron_right),
+          );
+        }
+
+        final picks = snapshot.data ?? [];
+
+        if (picks.isEmpty) {
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 120),
+                Icon(Icons.favorite_border, size: 48),
+                SizedBox(height: 12),
+                Center(child: Text('No picks found.')),
+                SizedBox(height: 8),
+                Center(child: Text('Pull down to refresh.')),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: picks.length,
+            itemBuilder: (context, index) {
+              final pick = picks[index];
+              final isBook = pick.kind.toLowerCase() == 'book';
+
+              return Card(
+                margin: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: ListTile(
+                  leading: Icon(
+                    isBook ? Icons.menu_book : Icons.movie,
+                    size: 36,
+                  ),
+                  title: Text(pick.title),
+                  subtitle: Text(pick.note),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => PickDetailScreen(pick: pick),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
           ),
         );
       },
+    );
+  }
+}
+
+// ==========================================
+// BOOK SEARCH TAB
+// ==========================================
+
+class BooksSearchTab extends StatefulWidget {
+  const BooksSearchTab({super.key});
+
+  @override
+  State<BooksSearchTab> createState() => _BooksSearchTabState();
+}
+
+class _BooksSearchTabState extends State<BooksSearchTab> {
+  final OpenLibraryApi _api = OpenLibraryApi();
+  final TextEditingController _controller = TextEditingController();
+
+  Timer? _debounce;
+  List<Book> _books = [];
+  bool _loading = false;
+  bool _searched = false;
+  String? _error;
+
+  void _onChanged(String value) {
+    _debounce?.cancel();
+
+    if (value.trim().length < 3) {
+      setState(() {
+        _books = [];
+        _loading = false;
+        _searched = false;
+        _error = null;
+      });
+      return;
+    }
+
+    _debounce = Timer(
+      const Duration(milliseconds: 500),
+      () => _search(value.trim()),
+    );
+  }
+
+  Future<void> _search(String query) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _searched = true;
+    });
+
+    try {
+      final results = await _api.search(query);
+      if (!mounted) return;
+
+      setState(() {
+        _books = results;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _books = [];
+        _loading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  Future<void> _copyId(Book book) async {
+    await Clipboard.setData(ClipboardData(text: book.id));
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied book ID: ${book.id}')),
+    );
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _controller,
+            onChanged: _onChanged,
+            decoration: InputDecoration(
+              labelText: 'Search books',
+              hintText: 'Enter at least 3 letters',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () {
+                  _controller.clear();
+                  _onChanged('');
+                },
+              ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(_error!),
+                      ),
+                    )
+                  : !_searched
+                      ? const Center(
+                          child: Text('Search for a book to get started.'),
+                        )
+                      : _books.isEmpty
+                          ? const Center(child: Text('No books found.'))
+                          : ListView.builder(
+                              itemCount: _books.length,
+                              itemBuilder: (context, index) {
+                                final book = _books[index];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  child: ListTile(
+                                    leading: book.coverId != null
+                                        ? Image.network(
+                                            'https://covers.openlibrary.org/b/id/${book.coverId}-M.jpg',
+                                            width: 50,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Icon(Icons.book),
+                                          )
+                                        : const Icon(Icons.book, size: 40),
+                                    title: Text(book.title),
+                                    subtitle: Text(
+                                      'Year: ${book.year?.toString() ?? 'N/A'}',
+                                    ),
+                                    trailing: IconButton(
+                                      tooltip: 'Copy book ID',
+                                      icon: const Icon(Icons.copy),
+                                      onPressed: () => _copyId(book),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+        ),
+      ],
     );
   }
 }
@@ -986,6 +1150,374 @@ class PhotoScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+// ==========================================
+// MOVIE SEARCH TAB
+// ==========================================
+
+class MoviesSearchTab extends StatefulWidget {
+  const MoviesSearchTab({super.key});
+
+  @override
+  State<MoviesSearchTab> createState() => _MoviesSearchTabState();
+}
+
+class _MoviesSearchTabState extends State<MoviesSearchTab> {
+  final OmdbApi _api = OmdbApi();
+  final TextEditingController _controller = TextEditingController();
+
+  Timer? _debounce;
+  List<Movie> _movies = [];
+  bool _loading = false;
+  bool _searched = false;
+  String? _error;
+
+  void _onChanged(String value) {
+    _debounce?.cancel();
+
+    if (value.trim().length < 3) {
+      setState(() {
+        _movies = [];
+        _loading = false;
+        _searched = false;
+        _error = null;
+      });
+      return;
+    }
+
+    _debounce = Timer(
+      const Duration(milliseconds: 500),
+      () => _search(value.trim()),
+    );
+  }
+
+  Future<void> _search(String query) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _searched = true;
+    });
+
+    try {
+      final results = await _api.search(query);
+      if (!mounted) return;
+
+      setState(() {
+        _movies = results;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _movies = [];
+        _loading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  Future<void> _copyId(Movie movie) async {
+    await Clipboard.setData(ClipboardData(text: movie.imdbId));
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied IMDb ID: ${movie.imdbId}')),
+    );
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (omdbKey.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'OMDb API key is missing.\n\n'
+            'Run the app with --dart-define=OMDB_KEY=your_key '
+            'or use --dart-define-from-file=cms.json.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _controller,
+            onChanged: _onChanged,
+            decoration: InputDecoration(
+              labelText: 'Search movies',
+              hintText: 'Enter at least 3 letters',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () {
+                  _controller.clear();
+                  _onChanged('');
+                },
+              ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(_error!),
+                      ),
+                    )
+                  : !_searched
+                      ? const Center(
+                          child: Text('Search for a movie to get started.'),
+                        )
+                      : _movies.isEmpty
+                          ? const Center(child: Text('No movies found.'))
+                          : ListView.builder(
+                              itemCount: _movies.length,
+                              itemBuilder: (context, index) {
+                                final movie = _movies[index];
+                                final hasPoster = movie.poster.isNotEmpty &&
+                                    movie.poster != 'N/A';
+
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  child: ListTile(
+                                    leading: hasPoster
+                                        ? Image.network(
+                                            movie.poster,
+                                            width: 50,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Icon(
+                                              Icons.movie,
+                                              size: 40,
+                                            ),
+                                          )
+                                        : const Icon(Icons.movie, size: 40),
+                                    title: Text(movie.title),
+                                    subtitle: Text('Year: ${movie.year}'),
+                                    trailing: IconButton(
+                                      tooltip: 'Copy IMDb ID',
+                                      icon: const Icon(Icons.copy),
+                                      onPressed: () => _copyId(movie),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+        ),
+      ],
+    );
+  }
+}
+
+
+// ==========================================
+// PICK DETAIL SCREEN
+// ==========================================
+
+class PickDetailScreen extends StatefulWidget {
+  final Pick pick;
+
+  const PickDetailScreen({
+    super.key,
+    required this.pick,
+  });
+
+  @override
+  State<PickDetailScreen> createState() => _PickDetailScreenState();
+}
+
+class _PickDetailScreenState extends State<PickDetailScreen> {
+  late Future<Map<String, dynamic>> _detailsFuture;
+
+  static const String _omdbKey =
+      String.fromEnvironment('OMDB_KEY');
+
+  @override
+  void initState() {
+    super.initState();
+    _detailsFuture = _fetchDetails();
+  }
+
+  Future<Map<String, dynamic>> _fetchDetails() async {
+    final pick = widget.pick;
+
+    if (pick.kind.trim().toLowerCase() == 'book') {
+      final id = pick.externalId.split('/').last;
+      final uri = Uri.https(
+        'openlibrary.org',
+        '/works/$id.json',
+      );
+      final response = await http.get(uri);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Open Library error: ${response.statusCode}',
+        );
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final rawDescription = data['description'];
+      String description = 'No description yet.';
+
+      if (rawDescription is String) {
+        description = rawDescription;
+      } else if (rawDescription is Map<String, dynamic>) {
+        description =
+            rawDescription['value']?.toString() ??
+            'No description yet.';
+      }
+
+      return {
+        'title': data['title']?.toString() ?? pick.title,
+        'description': description,
+        'coverUrl': data['covers'] is List &&
+                (data['covers'] as List).isNotEmpty
+            ? 'https://covers.openlibrary.org/b/id/'
+                '${(data['covers'] as List).first}-L.jpg'
+            : null,
+      };
+    }
+
+    if (_omdbKey.isEmpty) {
+      throw Exception(
+        'OMDb API key is missing. Check OMDB_KEY in cms.json.',
+      );
+    }
+
+    final uri = Uri.https(
+      'www.omdbapi.com',
+      '/',
+      {
+        'apikey': _omdbKey,
+        'i': pick.externalId,
+        'plot': 'short',
+      },
+    );
+    final response = await http.get(uri);
+
+    if (response.statusCode != 200) {
+      throw Exception('OMDb error: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (data['Response'] == 'False') {
+      throw Exception(data['Error']?.toString() ?? 'Movie not found.');
+    }
+
+    return {
+      'title': data['Title']?.toString() ?? pick.title,
+      'description': data['Plot']?.toString() ?? 'No plot available.',
+      'coverUrl': data['Poster']?.toString() == 'N/A'
+          ? null
+          : data['Poster']?.toString(),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pick = widget.pick;
+    final isBook = pick.kind.trim().toLowerCase() == 'book';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pick Details'),
+      ),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _detailsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Could not load details.\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          final details = snapshot.data!;
+          final coverUrl = details['coverUrl'] as String?;
+
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              if (coverUrl != null && coverUrl.isNotEmpty)
+                Center(
+                  child: Image.network(
+                    coverUrl,
+                    height: 260,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      isBook ? Icons.menu_book : Icons.movie,
+                      size: 100,
+                    ),
+                  ),
+                )
+              else
+                Center(
+                  child: Icon(
+                    isBook ? Icons.menu_book : Icons.movie,
+                    size: 100,
+                  ),
+                ),
+              const SizedBox(height: 20),
+              Text(
+                details['title']?.toString() ?? pick.title,
+                style: Theme.of(context).textTheme.headlineSmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                pick.note,
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                isBook ? 'Description' : 'Plot',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                details['description']?.toString() ??
+                    'No description available.',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
